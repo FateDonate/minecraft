@@ -105,7 +105,7 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         Bukkit.getPluginManager().registerEvents(this, this);
 
         restartBackgroundTasks();
-        getLogger().info("FateDonate loaded.");
+        getLogger().info("FateDonate загружен.");
     }
 
     @Override
@@ -353,7 +353,6 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         setButton(inventory, 39, Material.BOOK, message("menu-help"), List.of("&7Показать доступные команды."), actions, target -> {
             target.closeInventory();
             showHelp(target);
-            reopenMainMenuIfNeeded(target.getUniqueId());
         });
         setButton(inventory, 41, Material.BARRIER, message("menu-close"), List.of(), actions, Player::closeInventory);
 
@@ -403,7 +402,6 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         setButton(inventory, 48, Material.PAPER, "&bКастомная сумма", List.of("&7Используйте: /fd topup <сумма>"), actions, target -> {
             target.closeInventory();
             reply(target, message("topup-usage"));
-            reopenMainMenuIfNeeded(target.getUniqueId());
         });
         setButton(inventory, 49, Material.OAK_DOOR, message("menu-back"), List.of(), actions, this::openMainMenu);
         setButton(inventory, 50, Material.BARRIER, message("menu-close"), List.of(), actions, Player::closeInventory);
@@ -585,7 +583,6 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
                     if (online != null) {
                         reply(online, ApiErrorResolver.resolve(apiResult, message("create-topup-failed")));
                     }
-                    reopenMainMenuIfNeeded(identity.uuid());
                 });
                 return;
             }
@@ -596,7 +593,6 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
                 if (online != null) {
                     sendTopupLinkMessage(online, amount, apiResult.data().checkoutUrl());
                 }
-                reopenMainMenuIfNeeded(identity.uuid());
             });
         });
     }
@@ -619,7 +615,6 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
                     if (online != null) {
                         reply(online, ApiErrorResolver.resolve(purchaseResult, message("purchase-debit-failed")));
                     }
-                    reopenMainMenuIfNeeded(identity.uuid());
                 });
                 return;
             }
@@ -641,14 +636,12 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
                         )));
                     }
                     announcePurchase(identity, item, balanceAfter);
-                    reopenMainMenuIfNeeded(identity.uuid());
                     return;
                 }
 
                 if (online != null) {
                     reply(online, message("purchase-grant-failed"));
                 }
-                reopenMainMenuIfNeeded(identity.uuid());
             });
         });
     }
