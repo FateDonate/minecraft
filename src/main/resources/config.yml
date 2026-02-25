@@ -1,0 +1,141 @@
+settings:
+  api-base-url: "http://localhost:4000"
+  server-id: "your-server-id"
+  private-key: "your-private-key"
+  currency: "RUB"
+  request-timeout-seconds: 8
+  balance-cache-seconds: 5
+  topup-quick-amounts: [100, 300, 500, 1000]
+  reopen-main-menu-after-action: true
+  require-purchase-confirmation: true
+  announce-purchases-to-server: true
+  purchase-announcement-template: "&6Игрок &f{player_name}&6 купил &f{item_name}&6 за &f{price} {currency}"
+
+messages:
+  prefix: "&6[FateDonate]&r"
+  service-not-initialized: "&cСервис FateDonate не инициализирован."
+  unknown-command: "&cНеизвестная команда. Используйте /fd"
+  player-only-command: "&cКоманда доступна только игроку."
+  balance-request: "&7Запрашиваю ваш баланс..."
+  balance-response-template: "&aВаш баланс: &f{balance} {currency}"
+  balance-request-in-progress: "&eОперация уже выполняется. Подождите немного."
+  topup-link-creating: "&7Создаю ссылку на пополнение..."
+  topup-link-template: "&aСсылка на пополнение ({amount} {currency}): &f{checkout_url}"
+  topup-usage: "&eИспользуйте: /fd topup <сумма>"
+  topup-invalid-amount: "&cНекорректная сумма. Пример: /fd topup 300"
+  buy-usage: "&eИспользуйте: /fd buy <itemId>"
+  item-not-found: "&cТовар не найден. Откройте /fd shop"
+  category-not-found: "&cКатегория не найдена."
+  shop-empty: "&cВ этой категории пока нет товаров."
+  categories-empty: "&cКаталог категорий пуст. Заполните categories в конфиге."
+  purchase-not-available: "&cЭтот товар сейчас недоступен."
+  purchase-debit-failed: "&cНе удалось списать средства."
+  purchase-grant-failed: "&cБаланс списан, но выдача товара завершилась ошибкой. Проверьте логи."
+  internal-error: "&cВнутренняя ошибка плагина. Проверьте логи."
+  get-balance-failed: "&cНе удалось получить баланс."
+  create-topup-failed: "&cНе удалось создать ссылку на пополнение."
+  menu-main-title: "&0FateDonate"
+  menu-topup-title: "&0Пополнение"
+  menu-categories-title: "&0Категории"
+  menu-items-title-template: "&0{category_name}"
+  menu-confirm-title: "&0Подтверждение покупки"
+  menu-my-balance: "&eМой баланс"
+  menu-topup: "&aПополнить баланс"
+  menu-shop: "&bМагазин"
+  menu-help: "&dПомощь"
+  menu-back: "&cНазад"
+  menu-close: "&cЗакрыть"
+  menu-confirm-purchase: "&aПодтвердить покупку"
+  menu-back-to-shop: "&eНазад в магазин"
+  topup-quick-template: "&aПополнить на {amount} {currency}"
+  selected-item-template: "&7Вы выбрали: &f{item_title}"
+  selected-item-id-template: "&7ID товара: &f{item_id}"
+  selected-item-description-template: "&7Описание: &f{item_description}"
+  selected-item-price-template: "&7Цена: &f{price} {currency}"
+  purchase-starting-template: "&7Покупаю товар \"{item_title}\"..."
+  purchase-success-template: "&aПокупка \"{item_title}\" выполнена. Остаток: &f{balance} {currency}"
+  help-header: "&7Команды FateDonate:"
+  help-main-menu: "&f/fd &7- открыть главное меню"
+  help-balance: "&f/fd balance &7- проверить баланс"
+  help-topup: "&f/fd topup 300 &7- создать ссылку на пополнение"
+  help-shop: "&f/fd shop &7- открыть категории магазина"
+  help-buy: "&f/fd buy <itemId> &7- купить товар по ID"
+  config-missing-server-id: "&cНе заполнен settings.server-id в config.yml."
+  config-missing-private-key: "&cНе заполнен settings.private-key в config.yml."
+  config-missing-topup-amounts: "&cЗаполните settings.topup-quick-amounts в config.yml."
+  config-invalid-categories: "&cКатегории настроены неверно. Исправьте config.yml."
+  config-invalid-items: "&cТовары настроены неверно. Исправьте config.yml."
+
+categories:
+  vip:
+    title: "&6VIP и ранги"
+    description:
+      - "&7Привилегии и статусы."
+    material: "DIAMOND"
+    slot: 10
+  kits:
+    title: "&bКиты и ресурсы"
+    description:
+      - "&7Наборы для выживания и старта."
+    material: "CHEST"
+    slot: 13
+  currency:
+    title: "&aВалюта сервера"
+    description:
+      - "&7Пополнение внутриигрового счета."
+    material: "EMERALD"
+    slot: 16
+
+items:
+  vip_30d:
+    category: "vip"
+    title: "&6VIP на 30 дней"
+    description:
+      - "&7VIP-привилегия на 30 дней."
+      - "&7Бонусные возможности сервера."
+    material: "GOLD_INGOT"
+    slot: 10
+    price: 399
+    duration-days: 30
+    enabled: true
+    grant-commands:
+      - "lp user {player_name} parent addtemp vip 30d"
+
+  vip_forever:
+    category: "vip"
+    title: "&6VIP навсегда"
+    description:
+      - "&7Постоянная VIP-привилегия."
+    material: "NETHERITE_INGOT"
+    slot: 11
+    price: 1499
+    duration-days: 0
+    enabled: true
+    grant-commands:
+      - "lp user {player_name} parent add vip"
+
+  kit_start:
+    category: "kits"
+    title: "&bСтартовый набор"
+    description:
+      - "&7Полезный набор для начала игры."
+    material: "IRON_PICKAXE"
+    slot: 10
+    price: 149
+    duration-days: 0
+    enabled: true
+    grant-commands:
+      - "kit give start {player_name}"
+
+  coins_5000:
+    category: "currency"
+    title: "&a5000 коинов"
+    description:
+      - "&7Пополнение баланса сервера на 5000 коинов."
+    material: "SUNFLOWER"
+    slot: 10
+    price: 199
+    duration-days: 0
+    enabled: true
+    grant-commands:
+      - "eco give {player_name} 5000"

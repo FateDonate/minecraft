@@ -1,0 +1,10 @@
+name: FateDonate
+main: ru.fatedonate.minecraft.FateDonatePlugin
+version: 0.1.0
+api-version: "1.21"
+author: FateDonate
+description: Официальный клиент FateDonate для Minecraft
+commands:
+  fd:
+    description: Меню и команды FateDonate
+    usage: /fd [balance|topup|shop|buy]
