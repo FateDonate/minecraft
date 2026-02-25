@@ -102,6 +102,12 @@ categories:
       - "&7Пополнение внутриигрового счета."
     material: "EMERALD"
     slot: 16
+  experiments:
+    title: "&dЭксперименты"
+    description:
+      - "&7Специальные серверные эффекты."
+    material: "CLOCK"
+    slot: 19
 
 items:
   vip_30d:
@@ -156,3 +162,31 @@ items:
     enabled: true
     grant-commands:
       - "eco give {player_name} 5000"
+
+  exp_time_day:
+    category: "experiments"
+    title: "&eСделать день"
+    description:
+      - "&7Устанавливает время на день."
+      - "&7Команда: /time set day"
+    material: "SUNFLOWER"
+    slot: 10
+    price: 300
+    duration-days: 0
+    enabled: true
+    grant-commands:
+      - "time set day"
+
+  exp_time_night:
+    category: "experiments"
+    title: "&9Сделать ночь"
+    description:
+      - "&7Устанавливает время на ночь."
+      - "&7Команда: /time set night"
+    material: "CLOCK"
+    slot: 11
+    price: 300
+    duration-days: 0
+    enabled: true
+    grant-commands:
+      - "time set night"
