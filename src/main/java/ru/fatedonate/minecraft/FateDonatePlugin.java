@@ -1,6 +1,7 @@
 package ru.fatedonate.minecraft;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -63,6 +64,8 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
             28, 29, 30, 31, 32, 33, 34,
             37, 38, 39, 40, 41, 42, 43
     };
+
+    private static final String CHECKOUT_URL_PLACEHOLDER = "{checkout_url}";
 
     private static final Map<String, String> DEFAULT_MESSAGES = Map.ofEntries(
             Map.entry("no-permission", "&cУ вас нет прав для этой команды."),
@@ -958,39 +961,65 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
     }
 
     private void sendTopupLinkMessage(Player player, BigDecimal amount, String checkoutUrl) {
-        final String topupTemplate = renderTemplate(message("topup-link-template"), Map.of(
-                "{amount}", formatAmount(amount),
-                "{currency}", appConfig.settings().currency(),
-                "{checkout_url}", "{checkout_url}"
-        ));
-        final String fullTemplate = message("prefix") + " " + topupTemplate;
-        final int placeholderIndex = fullTemplate.indexOf("{checkout_url}");
-
-        if (placeholderIndex < 0) {
-            reply(player, renderTemplate(message("topup-link-template"), Map.of(
-                    "{amount}", formatAmount(amount),
-                    "{currency}", appConfig.settings().currency(),
-                    "{checkout_url}", checkoutUrl
-            )));
-            player.sendMessage(
-                    Component.text(checkoutUrl, NamedTextColor.AQUA, TextDecoration.UNDERLINED)
-                            .clickEvent(ClickEvent.openUrl(checkoutUrl))
-                            .hoverEvent(HoverEvent.showText(Component.text("Нажмите, чтобы открыть ссылку")))
-            );
+        final String normalizedCheckoutUrl = normalizeCheckoutUrl(checkoutUrl);
+        if (normalizedCheckoutUrl.isBlank()) {
+            reply(player, message("create-topup-failed"));
             return;
         }
 
-        final String before = fullTemplate.substring(0, placeholderIndex);
-        final String after = fullTemplate.substring(placeholderIndex + "{checkout_url}".length());
-        final Component clickableUrl = Component.text(checkoutUrl, NamedTextColor.AQUA, TextDecoration.UNDERLINED)
+        final String topupTemplate = renderTemplate(message("topup-link-template"), Map.of(
+                "{amount}", formatAmount(amount),
+                "{currency}", appConfig.settings().currency(),
+                CHECKOUT_URL_PLACEHOLDER, CHECKOUT_URL_PLACEHOLDER
+        ));
+        final String fullTemplate = message("prefix") + " " + topupTemplate;
+        final Component messageComponent = buildTopupLinkComponent(
+                fullTemplate,
+                buildClickableUrlComponent(normalizedCheckoutUrl));
+        player.sendMessage(messageComponent);
+    }
+
+    private Component buildTopupLinkComponent(String template, Component clickableUrl) {
+        final int placeholderIndex = template.indexOf(CHECKOUT_URL_PLACEHOLDER);
+        if (placeholderIndex < 0) {
+            return LEGACY_SERIALIZER.deserialize(template)
+                    .append(Component.text(" "))
+                    .append(clickableUrl);
+        }
+
+        final Component before = LEGACY_SERIALIZER.deserialize(template.substring(0, placeholderIndex));
+        final Component after = LEGACY_SERIALIZER.deserialize(
+                template.substring(placeholderIndex + CHECKOUT_URL_PLACEHOLDER.length()));
+        return before.append(clickableUrl).append(after);
+    }
+
+    private Component buildClickableUrlComponent(String checkoutUrl) {
+        return Component.text(checkoutUrl, NamedTextColor.AQUA, TextDecoration.UNDERLINED)
                 .clickEvent(ClickEvent.openUrl(checkoutUrl))
                 .hoverEvent(HoverEvent.showText(Component.text("Нажмите, чтобы открыть ссылку")));
+    }
 
-        player.sendMessage(
-                LEGACY_SERIALIZER.deserialize(before)
-                        .append(clickableUrl)
-                        .append(LEGACY_SERIALIZER.deserialize(after))
-        );
+    private String normalizeCheckoutUrl(String checkoutUrl) {
+        if (checkoutUrl == null) {
+            return "";
+        }
+
+        String normalized = checkoutUrl.trim();
+        if (normalized.isEmpty()) {
+            return "";
+        }
+
+        if (!normalized.startsWith("http://") && !normalized.startsWith("https://")) {
+            normalized = "https://" + normalized;
+        }
+
+        try {
+            URI.create(normalized);
+            return normalized;
+        } catch (Exception exception) {
+            getLogger().warning("Получен невалидный checkoutUrl от API: " + checkoutUrl);
+            return checkoutUrl.trim();
+        }
     }
 
     private String message(String key) {
