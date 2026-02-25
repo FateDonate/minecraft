@@ -25,113 +25,214 @@ public final class GameApiClient {
     }
 
     public ApiResult<BalanceResponse> getBalance(String playerId) {
-        final var request = baseRequest(buildUrl("balance/" + playerId))
+        final var request = privateRequest(buildUrl("balance/" + playerId))
                 .GET()
                 .build();
 
         final var response = send(request);
         if (!response.isSuccess() || response.data() == null) {
-            return ApiResult.fail(response.statusCode(), response.error());
+            return ApiResult.fail(response.statusCode(), response.error(), response.retryAfterSeconds());
         }
 
-        final var json = response.data();
-        final JsonElement balanceElement = json.get("balance");
-        if (balanceElement == null || !balanceElement.isJsonPrimitive()) {
+        final BigDecimal balance = readBigDecimal(response.data(), "balance");
+        if (balance == null) {
             return ApiResult.fail(
                     response.statusCode(),
-                    "Не удалось разобрать ответ API баланса."
+                    "Не удалось разобрать ответ API баланса.",
+                    response.retryAfterSeconds()
             );
         }
 
-        try {
-            return ApiResult.success(
-                    response.statusCode(),
-                    new BalanceResponse(balanceElement.getAsBigDecimal().stripTrailingZeros())
-            );
-        } catch (NumberFormatException exception) {
-            return ApiResult.fail(
-                    response.statusCode(),
-                    "Не удалось разобрать ответ API баланса."
-            );
-        }
+        return ApiResult.success(response.statusCode(), new BalanceResponse(balance));
     }
 
-    public ApiResult<TopupLinkResponse> createTopupLink(String playerId, BigDecimal amount) {
+    public ApiResult<TopupLinkResponse> createTopupLink(String playerId, String playerName, BigDecimal amount) {
         final var payload = new JsonObject();
-        payload.addProperty("steamId64", playerId);
+        payload.addProperty("playerId", playerId);
+        payload.addProperty("playerName", playerName);
         payload.addProperty("amount", amount);
         payload.addProperty("currency", settings.currency());
 
-        final var request = baseRequest(buildUrl("topup-link"))
+        final var request = privateRequest(buildUrl("topup-link"))
                 .POST(HttpRequest.BodyPublishers.ofString(payload.toString(), StandardCharsets.UTF_8))
                 .build();
 
         final var response = send(request);
         if (!response.isSuccess() || response.data() == null) {
-            return ApiResult.fail(response.statusCode(), response.error());
+            return ApiResult.fail(response.statusCode(), response.error(), response.retryAfterSeconds());
         }
 
         final var json = response.data();
-        final JsonElement checkoutUrlElement = json.get("checkoutUrl");
-        if (checkoutUrlElement == null || !checkoutUrlElement.isJsonPrimitive()) {
-            return ApiResult.fail(
-                    response.statusCode(),
-                    "Не удалось получить ссылку на пополнение."
-            );
-        }
+        final String sessionId = readString(json, "sessionId");
+        final String checkoutUrl = readString(json, "checkoutUrl");
 
-        final String checkoutUrl = checkoutUrlElement.getAsString().trim();
-        if (checkoutUrl.isEmpty()) {
+        if (sessionId == null || sessionId.isBlank() || checkoutUrl == null || checkoutUrl.isBlank()) {
             return ApiResult.fail(
                     response.statusCode(),
-                    "Не удалось получить ссылку на пополнение."
+                    "Не удалось получить ссылку на пополнение.",
+                    response.retryAfterSeconds()
             );
         }
 
         return ApiResult.success(
                 response.statusCode(),
-                new TopupLinkResponse(checkoutUrl)
+                new TopupLinkResponse(sessionId, checkoutUrl.trim())
         );
     }
 
-    public ApiResult<DebitResponse> debit(String playerId, BigDecimal amount, String description) {
+    public ApiResult<PurchaseResponse> createPurchase(
+            String playerId,
+            String playerName,
+            String itemId,
+            String itemName,
+            BigDecimal amount,
+            String description
+    ) {
         final var payload = new JsonObject();
-        payload.addProperty("steamId64", playerId);
+        payload.addProperty("playerId", playerId);
+        payload.addProperty("playerName", playerName);
+        payload.addProperty("itemId", itemId);
+        payload.addProperty("itemName", itemName);
         payload.addProperty("amount", amount);
+        payload.addProperty("currency", settings.currency());
         payload.addProperty("description", description);
 
-        final var request = baseRequest(buildUrl("debit"))
+        final var request = privateRequest(buildUrl("purchase"))
                 .POST(HttpRequest.BodyPublishers.ofString(payload.toString(), StandardCharsets.UTF_8))
                 .build();
 
         final var response = send(request);
         if (!response.isSuccess() || response.data() == null) {
-            return ApiResult.fail(response.statusCode(), response.error());
+            return ApiResult.fail(response.statusCode(), response.error(), response.retryAfterSeconds());
         }
 
         final var json = response.data();
-        final JsonElement balanceElement = json.get("balance");
-        if (balanceElement == null || !balanceElement.isJsonPrimitive()) {
+        final String purchaseId = readString(json, "purchaseId");
+        final BigDecimal balance = readBigDecimal(json, "balance");
+
+        if (purchaseId == null || purchaseId.isBlank() || balance == null) {
             return ApiResult.fail(
                     response.statusCode(),
-                    "Не удалось разобрать ответ API списания."
+                    "Не удалось разобрать ответ API покупки.",
+                    response.retryAfterSeconds()
             );
         }
 
-        try {
-            return ApiResult.success(
-                    response.statusCode(),
-                    new DebitResponse(balanceElement.getAsBigDecimal().stripTrailingZeros())
-            );
-        } catch (NumberFormatException exception) {
-            return ApiResult.fail(
-                    response.statusCode(),
-                    "Не удалось разобрать ответ API списания."
-            );
-        }
+        return ApiResult.success(
+                response.statusCode(),
+                new PurchaseResponse(purchaseId.trim(), balance)
+        );
     }
 
-    private HttpRequest.Builder baseRequest(String url) {
+    public ApiResult<PurchaseStateResponse> completePurchase(String purchaseId) {
+        final var request = privateRequest(buildUrl("purchase/" + purchaseId + "/complete"))
+                .POST(HttpRequest.BodyPublishers.ofString("{}", StandardCharsets.UTF_8))
+                .build();
+
+        final var response = send(request);
+        if (!response.isSuccess() || response.data() == null) {
+            return ApiResult.fail(response.statusCode(), response.error(), response.retryAfterSeconds());
+        }
+
+        final var json = response.data();
+        final String responsePurchaseId = readString(json, "purchaseId");
+        final String status = readString(json, "status");
+        final boolean duplicate = readBoolean(json, "duplicate", false);
+
+        if (responsePurchaseId == null || responsePurchaseId.isBlank() || status == null || status.isBlank()) {
+            return ApiResult.fail(
+                    response.statusCode(),
+                    "Не удалось разобрать ответ API завершения покупки.",
+                    response.retryAfterSeconds()
+            );
+        }
+
+        return ApiResult.success(
+                response.statusCode(),
+                new PurchaseStateResponse(responsePurchaseId, status, null, duplicate)
+        );
+    }
+
+    public ApiResult<PurchaseStateResponse> refundPurchase(String purchaseId, String reason) {
+        final var payload = new JsonObject();
+        payload.addProperty("reason", reason);
+
+        final var request = privateRequest(buildUrl("purchase/" + purchaseId + "/refund"))
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString(), StandardCharsets.UTF_8))
+                .build();
+
+        final var response = send(request);
+        if (!response.isSuccess() || response.data() == null) {
+            return ApiResult.fail(response.statusCode(), response.error(), response.retryAfterSeconds());
+        }
+
+        final var json = response.data();
+        final String responsePurchaseId = readString(json, "purchaseId");
+        final String status = readString(json, "status");
+        final BigDecimal balance = readBigDecimal(json, "balance");
+        final boolean duplicate = readBoolean(json, "duplicate", false);
+
+        if (responsePurchaseId == null || responsePurchaseId.isBlank() || status == null || status.isBlank()) {
+            return ApiResult.fail(
+                    response.statusCode(),
+                    "Не удалось разобрать ответ API возврата покупки.",
+                    response.retryAfterSeconds()
+            );
+        }
+
+        return ApiResult.success(
+                response.statusCode(),
+                new PurchaseStateResponse(responsePurchaseId, status, balance, duplicate)
+        );
+    }
+
+    public ApiResult<TopupSessionResponse> getTopupSession(String sessionId) {
+        final var request = privateRequest(buildUrl("topup-session/" + sessionId))
+                .GET()
+                .build();
+
+        final var response = send(request);
+        if (!response.isSuccess() || response.data() == null) {
+            return ApiResult.fail(response.statusCode(), response.error(), response.retryAfterSeconds());
+        }
+
+        final JsonObject root = response.data();
+        if (!root.has("session") || !root.get("session").isJsonObject()) {
+            return ApiResult.fail(
+                    response.statusCode(),
+                    "Не удалось разобрать ответ API статуса пополнения.",
+                    response.retryAfterSeconds()
+            );
+        }
+
+        final JsonObject session = root.getAsJsonObject("session");
+        final String responseSessionId = readString(session, "id");
+        final String status = readString(session, "status");
+        final String playerId = readString(session, "playerId");
+        final String currency = readString(session, "currency");
+        final BigDecimal amount = readBigDecimal(session, "amount");
+
+        if (responseSessionId == null || responseSessionId.isBlank() || status == null || status.isBlank()) {
+            return ApiResult.fail(
+                    response.statusCode(),
+                    "Не удалось разобрать ответ API статуса пополнения.",
+                    response.retryAfterSeconds()
+            );
+        }
+
+        return ApiResult.success(
+                response.statusCode(),
+                new TopupSessionResponse(
+                        responseSessionId,
+                        status,
+                        playerId == null ? "" : playerId,
+                        amount == null ? BigDecimal.ZERO : amount,
+                        currency == null || currency.isBlank() ? settings.currency() : currency
+                )
+        );
+    }
+
+    private HttpRequest.Builder privateRequest(String url) {
         return HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofSeconds(settings.requestTimeoutSeconds()))
                 .header("Accept", "application/json")
@@ -144,21 +245,37 @@ public final class GameApiClient {
             final var response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             final int statusCode = response.statusCode();
             final String body = response.body() == null ? "" : response.body();
+            final Integer retryAfterSeconds = parseRetryAfter(response);
 
             if (statusCode >= 200 && statusCode < 300) {
                 final JsonObject payload = parseJsonObject(body);
                 if (payload == null) {
-                    return ApiResult.fail(statusCode, "Не удалось разобрать ответ API.");
+                    return ApiResult.fail(statusCode, "Не удалось разобрать ответ API.", retryAfterSeconds);
                 }
                 return ApiResult.success(statusCode, payload);
             }
 
-            return ApiResult.fail(statusCode, parseError(body, statusCode));
+            return ApiResult.fail(statusCode, parseError(body, statusCode), retryAfterSeconds);
         } catch (Exception exception) {
             return ApiResult.fail(
                     0,
-                    "Ошибка соединения с API: " + exception.getMessage()
+                    "Ошибка соединения с API: " + exception.getMessage(),
+                    null
             );
+        }
+    }
+
+    private static Integer parseRetryAfter(HttpResponse<?> response) {
+        final String value = response.headers().firstValue("retry-after").orElse(null);
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        try {
+            final int parsed = Integer.parseInt(value.trim());
+            return parsed > 0 ? parsed : null;
+        } catch (NumberFormatException exception) {
+            return null;
         }
     }
 
@@ -200,6 +317,54 @@ public final class GameApiClient {
         return "HTTP " + statusCode;
     }
 
+    private static String readString(JsonObject json, String key) {
+        if (json == null || !json.has(key)) {
+            return null;
+        }
+
+        final JsonElement value = json.get(key);
+        if (!value.isJsonPrimitive()) {
+            return null;
+        }
+
+        final String stringValue = value.getAsString();
+        return stringValue == null ? null : stringValue.trim();
+    }
+
+    private static BigDecimal readBigDecimal(JsonObject json, String key) {
+        if (json == null || !json.has(key)) {
+            return null;
+        }
+
+        final JsonElement value = json.get(key);
+        if (!value.isJsonPrimitive()) {
+            return null;
+        }
+
+        try {
+            return value.getAsBigDecimal().stripTrailingZeros();
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private static boolean readBoolean(JsonObject json, String key, boolean fallback) {
+        if (json == null || !json.has(key)) {
+            return fallback;
+        }
+
+        final JsonElement value = json.get(key);
+        if (!value.isJsonPrimitive()) {
+            return fallback;
+        }
+
+        try {
+            return value.getAsBoolean();
+        } catch (Exception exception) {
+            return fallback;
+        }
+    }
+
     private String buildUrl(String path) {
         final String base = settings.apiBaseUrl().trim().replaceAll("/+$", "");
         final String normalizedPath = path.startsWith("/") ? path.substring(1) : path;
@@ -209,9 +374,15 @@ public final class GameApiClient {
     public record BalanceResponse(BigDecimal balance) {
     }
 
-    public record TopupLinkResponse(String checkoutUrl) {
+    public record TopupLinkResponse(String sessionId, String checkoutUrl) {
     }
 
-    public record DebitResponse(BigDecimal balance) {
+    public record PurchaseResponse(String purchaseId, BigDecimal balance) {
+    }
+
+    public record PurchaseStateResponse(String purchaseId, String status, BigDecimal balance, boolean duplicate) {
+    }
+
+    public record TopupSessionResponse(String sessionId, String status, String playerId, BigDecimal amount, String currency) {
     }
 }

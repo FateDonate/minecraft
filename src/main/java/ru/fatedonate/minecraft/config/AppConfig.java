@@ -102,7 +102,12 @@ public final class AppConfig {
             boolean reopenMainMenuAfterAction,
             boolean requirePurchaseConfirmation,
             boolean announcePurchasesToServer,
-            String purchaseAnnouncementTemplate
+            String purchaseAnnouncementTemplate,
+            boolean topupWatchEnabled,
+            int topupStatusPollIntervalSeconds,
+            int topupWatchTimeoutSeconds,
+            int pendingGrantRetryIntervalSeconds,
+            int pendingGrantMaxAttempts
     ) {
         public Settings {
             topupQuickAmounts = List.copyOf(topupQuickAmounts);

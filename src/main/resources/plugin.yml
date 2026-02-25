@@ -7,4 +7,11 @@ description: Официальный клиент FateDonate для Minecraft
 commands:
   fd:
     description: Меню и команды FateDonate
-    usage: /fd [balance|topup|shop|buy]
+    usage: /fd [balance|topup|shop|buy|status|reload]
+permissions:
+  fatedonate.use:
+    description: Доступ к меню и покупке в FateDonate
+    default: true
+  fatedonate.admin:
+    description: Административные команды FateDonate (/fd reload, /fd status)
+    default: op

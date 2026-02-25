@@ -130,6 +130,30 @@ public final class ConfigLoader {
                 "settings.purchase-announcement-template",
                 errors
         );
+        final boolean topupWatchEnabled = configuration.getBoolean(
+                "settings.topup-watch-enabled",
+                true
+        );
+        final int topupStatusPollIntervalSeconds = clampInt(
+                configuration.getInt("settings.topup-status-poll-interval-seconds", 5),
+                3,
+                60
+        );
+        final int topupWatchTimeoutSeconds = clampInt(
+                configuration.getInt("settings.topup-watch-timeout-seconds", 600),
+                30,
+                3600
+        );
+        final int pendingGrantRetryIntervalSeconds = clampInt(
+                configuration.getInt("settings.pending-grant-retry-interval-seconds", 30),
+                5,
+                600
+        );
+        final int pendingGrantMaxAttempts = clampInt(
+                configuration.getInt("settings.pending-grant-max-attempts", 8),
+                1,
+                100
+        );
 
         return new AppConfig.Settings(
                 apiBaseUrl.trim(),
@@ -142,7 +166,12 @@ public final class ConfigLoader {
                 reopenMainMenuAfterAction,
                 requirePurchaseConfirmation,
                 announcePurchasesToServer,
-                purchaseAnnouncementTemplate
+                purchaseAnnouncementTemplate,
+                topupWatchEnabled,
+                topupStatusPollIntervalSeconds,
+                topupWatchTimeoutSeconds,
+                pendingGrantRetryIntervalSeconds,
+                pendingGrantMaxAttempts
         );
     }
 
