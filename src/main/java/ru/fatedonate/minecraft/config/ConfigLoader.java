@@ -101,13 +101,6 @@ public final class ConfigLoader {
         final String privateKey = readRequiredString(configuration, "settings.private-key", errors);
         final String currency = readRequiredString(configuration, "settings.currency", errors);
 
-        if ("your-server-id".equalsIgnoreCase(serverId)) {
-            errors.add("settings.server-id: укажите реальный server id, а не пример.");
-        }
-        if ("your-private-key".equalsIgnoreCase(privateKey)) {
-            errors.add("settings.private-key: укажите реальный private key, а не пример.");
-        }
-
         final int requestTimeout = clampInt(
                 configuration.getInt("settings.request-timeout-seconds", 8),
                 3,

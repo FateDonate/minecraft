@@ -17,6 +17,14 @@
 
 ## Как собрать проект
 
+Windows (без установленного Maven):
+
+```powershell
+.\mvnw.cmd -DskipTests package
+```
+
+Если Maven уже установлен:
+
 ```bash
 mvn -DskipTests package
 ```
