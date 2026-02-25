@@ -93,7 +93,7 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
 
         final PluginCommand fdCommand = getCommand("fd");
         if (fdCommand == null) {
-            getLogger().severe("Command /fd is not registered in plugin.yml.");
+            getLogger().severe("Команда /fd не зарегистрирована plugin.yml.");
             Bukkit.getPluginManager().disablePlugin(this);
             return;
         }
@@ -779,7 +779,7 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         final ConfigLoader.LoadResult loadResult = ConfigLoader.load(getConfig());
         if (!loadResult.errors().isEmpty() || loadResult.config() == null) {
             if (logErrors) {
-                getLogger().severe("FateDonate config has errors:");
+                getLogger().severe("FateDonate конфиг имеет ошибки:");
                 for (var error : loadResult.errors()) {
                     getLogger().severe("- " + error);
                 }
@@ -815,7 +815,7 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
                         reply(online, message("internal-error"));
                     }
                 });
-                getLogger().severe("FateDonate operation failed: " + exception.getMessage());
+                getLogger().severe("FateDonate неудачная операция: " + exception.getMessage());
             } finally {
                 activeOperations.remove(playerUuid);
             }
@@ -844,12 +844,12 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
             try {
                 final boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
                 if (!success) {
-                    getLogger().warning("Grant command returned false for item " + itemId + ": " + command);
+                    getLogger().warning("Неудачное выполнение команды у предмета " + itemId + ": " + command);
                     return false;
                 }
                 executedAtLeastOne = true;
             } catch (Exception exception) {
-                getLogger().severe("Grant command failed for item " + itemId + ": " + command + " (" + exception.getMessage() + ")");
+                getLogger().severe("Ошибка выполнения команды " + itemId + ": " + command + " (" + exception.getMessage() + ")");
                 return false;
             }
         }
@@ -1056,9 +1056,9 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
     private static String buildPurchaseDescription(AppConfig.ItemConfig item) {
         final String itemName = ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', item.title()));
         if (item.durationDays() <= 0) {
-            return "Purchase item: " + itemName;
+            return "Покупка: " + itemName;
         }
-        return "Purchase item: " + itemName + " (" + item.durationDays() + "d)";
+        return "Покупка: " + itemName + " (" + item.durationDays() + "d)";
     }
 
     private boolean isReady() {
