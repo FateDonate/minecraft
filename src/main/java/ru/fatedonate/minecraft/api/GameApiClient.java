@@ -237,18 +237,8 @@ public final class GameApiClient {
         final String errorText = payload.has("error") && payload.get("error").isJsonPrimitive()
                 ? payload.get("error").getAsString().trim()
                 : "";
-        final String messageText = payload.has("message") && payload.get("message").isJsonPrimitive()
-                ? payload.get("message").getAsString().trim()
-                : "";
-
-        if (!errorText.isEmpty() && !messageText.isEmpty()) {
-            return errorText + ": " + messageText;
-        }
         if (!errorText.isEmpty()) {
             return errorText;
-        }
-        if (!messageText.isEmpty()) {
-            return messageText;
         }
 
         return "HTTP " + statusCode;

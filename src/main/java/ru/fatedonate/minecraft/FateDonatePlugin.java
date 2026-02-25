@@ -1,7 +1,6 @@
 package ru.fatedonate.minecraft;
 
 import java.math.BigDecimal;
-import java.net.URI;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -15,12 +14,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.event.HoverEvent;
-import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -47,14 +40,13 @@ import ru.fatedonate.minecraft.config.ConfigLoader;
 import ru.fatedonate.minecraft.model.BalanceCacheEntry;
 import ru.fatedonate.minecraft.model.OpenMenuContext;
 import ru.fatedonate.minecraft.model.PlayerIdentity;
-import ru.fatedonate.minecraft.model.TopupWatchSession;
 import ru.fatedonate.minecraft.service.ApiErrorResolver;
+import ru.fatedonate.minecraft.service.TopupLinkMessageService;
+import ru.fatedonate.minecraft.service.TopupWatchService;
 import ru.fatedonate.minecraft.util.Pagination;
 
 public final class FateDonatePlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
     private static final DecimalFormat AMOUNT_FORMAT = new DecimalFormat("0.##");
-    private static final LegacyComponentSerializer LEGACY_SERIALIZER =
-            LegacyComponentSerializer.legacyAmpersand();
     private static final String PERMISSION_USE = "fatedonate.use";
     private static final String PERMISSION_ADMIN = "fatedonate.admin";
 
@@ -64,8 +56,6 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
             28, 29, 30, 31, 32, 33, 34,
             37, 38, 39, 40, 41, 42, 43
     };
-
-    private static final String CHECKOUT_URL_PLACEHOLDER = "{checkout_url}";
 
     private static final Map<String, String> DEFAULT_MESSAGES = Map.ofEntries(
             Map.entry("no-permission", "&cУ вас нет прав для этой команды."),
@@ -87,7 +77,8 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
     private final Set<UUID> activeOperations = ConcurrentHashMap.newKeySet();
     private final Map<String, BalanceCacheEntry> balanceCache = new ConcurrentHashMap<>();
     private final Map<UUID, OpenMenuContext> openMenus = new ConcurrentHashMap<>();
-    private final Map<String, TopupWatchSession> topupWatchSessions = new ConcurrentHashMap<>();
+    private final TopupWatchService topupWatchService = new TopupWatchService();
+    private final TopupLinkMessageService topupLinkMessageService = new TopupLinkMessageService();
 
     private AppConfig appConfig;
     private GameApiClient apiClient;
@@ -124,7 +115,7 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         activeOperations.clear();
         balanceCache.clear();
         openMenus.clear();
-        topupWatchSessions.clear();
+        topupWatchService.clear();
     }
 
     @Override
@@ -330,7 +321,7 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         reply(sender, renderTemplate(message("status-api-template"), Map.of("{api_base_url}", appConfig == null ? "-" : appConfig.settings().apiBaseUrl())));
         reply(sender, renderTemplate(message("status-server-id-template"), Map.of("{server_id}", appConfig == null ? "-" : appConfig.settings().serverId())));
         reply(sender, renderTemplate(message("status-active-operations-template"), Map.of("{count}", Integer.toString(activeOperations.size()))));
-        reply(sender, renderTemplate(message("status-topup-watches-template"), Map.of("{count}", Integer.toString(topupWatchSessions.size()))));
+        reply(sender, renderTemplate(message("status-topup-watches-template"), Map.of("{count}", Integer.toString(topupWatchService.size()))));
     }
 
     private void openMainMenu(Player player) {
@@ -352,7 +343,7 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         setButton(inventory, 23, Material.CHEST, message("menu-shop"), List.of("&7Категории и товары."), actions, target -> openCategoriesMenu(target, 0));
         setButton(inventory, 31, Material.CLOCK, "&bСервис", List.of(
                 "&7Активные операции: &f" + activeOperations.size(),
-                "&7Ожидание пополнений: &f" + topupWatchSessions.size()
+                "&7Ожидание пополнений: &f" + topupWatchService.size()
         ), actions, target -> {
             if (target.hasPermission(PERMISSION_ADMIN)) {
                 target.closeInventory();
@@ -663,79 +654,56 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
     }
 
     private void pollTopupSessions() {
-        if (!isReady() || !appConfig.settings().topupWatchEnabled() || topupWatchSessions.isEmpty()) {
+        if (!isReady() || !appConfig.settings().topupWatchEnabled()) {
             return;
         }
 
-        final long now = System.currentTimeMillis();
-        final List<TopupWatchSession> sessions = new ArrayList<>(topupWatchSessions.values());
+        final List<TopupWatchService.PollEvent> events = topupWatchService.poll(
+                apiClient,
+                appConfig.settings().currency(),
+                System.currentTimeMillis()
+        );
+        if (events.isEmpty()) {
+            return;
+        }
 
-        for (var watch : sessions) {
-            final boolean isExpiredByTimeout = watch.expiresAtMillis() <= now;
-            final ApiResult<GameApiClient.TopupSessionResponse> statusResult = apiClient.getTopupSession(watch.sessionId());
-            if (!statusResult.isSuccess() || statusResult.data() == null) {
-                if (statusResult.statusCode() == 404) {
-                    topupWatchSessions.remove(watch.sessionId());
-                    if (isExpiredByTimeout) {
-                        runSync(() -> {
-                            final Player player = Bukkit.getPlayer(watch.playerUuid());
-                            if (player != null) {
-                                reply(player, renderTemplate(message("topup-watch-expired-template"), Map.of("{session_id}", watch.sessionId())));
-                            }
-                        });
-                    }
-                } else if (isExpiredByTimeout) {
-                    topupWatchSessions.remove(watch.sessionId());
-                    runSync(() -> {
-                        final Player player = Bukkit.getPlayer(watch.playerUuid());
-                        if (player != null) {
-                            reply(player, renderTemplate(message("topup-watch-expired-template"), Map.of("{session_id}", watch.sessionId())));
-                        }
-                    });
+        for (var event : events) {
+            if (event instanceof TopupWatchService.PollEvent.Completed completed) {
+                if (completed.balanceAfter() != null) {
+                    updateBalanceCache(completed.playerId(), completed.balanceAfter());
                 }
-                continue;
-            }
-
-            final String status = statusResult.data().status().toUpperCase(Locale.ROOT);
-            if ("COMPLETED".equals(status)) {
-                topupWatchSessions.remove(watch.sessionId());
-                BigDecimal balanceAfter = null;
-                final ApiResult<GameApiClient.BalanceResponse> balanceResult = apiClient.getBalance(watch.playerId());
-                if (balanceResult.isSuccess() && balanceResult.data() != null) {
-                    balanceAfter = balanceResult.data().balance();
-                    updateBalanceCache(watch.playerId(), balanceAfter);
-                }
-                final BigDecimal finalBalanceAfter = balanceAfter;
                 runSync(() -> {
-                    final Player player = Bukkit.getPlayer(watch.playerUuid());
+                    final Player player = Bukkit.getPlayer(completed.playerUuid());
                     if (player != null) {
                         reply(player, renderTemplate(message("topup-completed-template"), Map.of(
-                                "{amount}", formatAmount(statusResult.data().amount()),
-                                "{currency}", statusResult.data().currency(),
-                                "{balance}", finalBalanceAfter == null ? "?" : formatAmount(finalBalanceAfter)
+                                "{amount}", formatAmount(completed.amount()),
+                                "{currency}", completed.currency(),
+                                "{balance}", completed.balanceAfter() == null ? "?" : formatAmount(completed.balanceAfter())
                         )));
                     }
                 });
                 continue;
             }
 
-            if (isExpiredByTimeout && "PENDING".equals(status)) {
-                topupWatchSessions.remove(watch.sessionId());
+            if (event instanceof TopupWatchService.PollEvent.Expired expired) {
                 runSync(() -> {
-                    final Player player = Bukkit.getPlayer(watch.playerUuid());
+                    final Player player = Bukkit.getPlayer(expired.playerUuid());
                     if (player != null) {
-                        reply(player, renderTemplate(message("topup-watch-expired-template"), Map.of("{session_id}", watch.sessionId())));
+                        reply(player, renderTemplate(message("topup-watch-expired-template"), Map.of(
+                                "{session_id}", expired.sessionId()
+                        )));
                     }
                 });
                 continue;
             }
 
-            if ("FAILED".equals(status)) {
-                topupWatchSessions.remove(watch.sessionId());
+            if (event instanceof TopupWatchService.PollEvent.Failed failed) {
                 runSync(() -> {
-                    final Player player = Bukkit.getPlayer(watch.playerUuid());
+                    final Player player = Bukkit.getPlayer(failed.playerUuid());
                     if (player != null) {
-                        reply(player, renderTemplate(message("topup-watch-failed-template"), Map.of("{session_id}", watch.sessionId())));
+                        reply(player, renderTemplate(message("topup-watch-failed-template"), Map.of(
+                                "{session_id}", failed.sessionId()
+                        )));
                     }
                 });
             }
@@ -746,15 +714,13 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         if (!isReady() || !appConfig.settings().topupWatchEnabled()) {
             return;
         }
-        final long now = System.currentTimeMillis();
-        topupWatchSessions.put(sessionId, new TopupWatchSession(
+
+        topupWatchService.register(
+                identity,
                 sessionId,
-                identity.uuid(),
-                identity.playerId(),
-                identity.playerName(),
-                now,
-                now + appConfig.settings().topupWatchTimeoutSeconds() * 1000L
-        ));
+                System.currentTimeMillis(),
+                appConfig.settings().topupWatchTimeoutSeconds()
+        );
     }
 
     private void restartBackgroundTasks() {
@@ -771,7 +737,7 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
                     Math.max(20L, appConfig.settings().topupStatusPollIntervalSeconds() * 20L)
             );
         } else {
-            topupWatchSessions.clear();
+            topupWatchService.clear();
         }
     }
 
@@ -961,64 +927,20 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
     }
 
     private void sendTopupLinkMessage(Player player, BigDecimal amount, String checkoutUrl) {
-        final String normalizedCheckoutUrl = normalizeCheckoutUrl(checkoutUrl);
-        if (normalizedCheckoutUrl.isBlank()) {
-            reply(player, message("create-topup-failed"));
-            return;
-        }
-
         final String topupTemplate = renderTemplate(message("topup-link-template"), Map.of(
                 "{amount}", formatAmount(amount),
                 "{currency}", appConfig.settings().currency(),
-                CHECKOUT_URL_PLACEHOLDER, CHECKOUT_URL_PLACEHOLDER
+                topupLinkMessageService.checkoutUrlPlaceholder(), topupLinkMessageService.checkoutUrlPlaceholder()
         ));
         final String fullTemplate = message("prefix") + " " + topupTemplate;
-        final Component messageComponent = buildTopupLinkComponent(
+        final boolean sent = topupLinkMessageService.send(
+                player,
                 fullTemplate,
-                buildClickableUrlComponent(normalizedCheckoutUrl));
-        player.sendMessage(messageComponent);
-    }
-
-    private Component buildTopupLinkComponent(String template, Component clickableUrl) {
-        final int placeholderIndex = template.indexOf(CHECKOUT_URL_PLACEHOLDER);
-        if (placeholderIndex < 0) {
-            return LEGACY_SERIALIZER.deserialize(template)
-                    .append(Component.text(" "))
-                    .append(clickableUrl);
-        }
-
-        final Component before = LEGACY_SERIALIZER.deserialize(template.substring(0, placeholderIndex));
-        final Component after = LEGACY_SERIALIZER.deserialize(
-                template.substring(placeholderIndex + CHECKOUT_URL_PLACEHOLDER.length()));
-        return before.append(clickableUrl).append(after);
-    }
-
-    private Component buildClickableUrlComponent(String checkoutUrl) {
-        return Component.text(checkoutUrl, NamedTextColor.AQUA, TextDecoration.UNDERLINED)
-                .clickEvent(ClickEvent.openUrl(checkoutUrl))
-                .hoverEvent(HoverEvent.showText(Component.text("Нажмите, чтобы открыть ссылку")));
-    }
-
-    private String normalizeCheckoutUrl(String checkoutUrl) {
-        if (checkoutUrl == null) {
-            return "";
-        }
-
-        String normalized = checkoutUrl.trim();
-        if (normalized.isEmpty()) {
-            return "";
-        }
-
-        if (!normalized.startsWith("http://") && !normalized.startsWith("https://")) {
-            normalized = "https://" + normalized;
-        }
-
-        try {
-            URI.create(normalized);
-            return normalized;
-        } catch (Exception exception) {
-            getLogger().warning("Получен невалидный checkoutUrl от API: " + checkoutUrl);
-            return checkoutUrl.trim();
+                checkoutUrl,
+                warning -> getLogger().warning(warning)
+        );
+        if (!sent) {
+            reply(player, message("create-topup-failed"));
         }
     }
 
