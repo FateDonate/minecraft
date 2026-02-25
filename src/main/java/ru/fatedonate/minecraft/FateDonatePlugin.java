@@ -801,7 +801,9 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
 
         final PlayerIdentity identity = new PlayerIdentity(
                 playerUuid,
-                player.getName(),
+                player.getName() == null || player.getName().isBlank()
+                        ? playerUuid.toString().replace("-", "")
+                        : player.getName().trim(),
                 playerUuid.toString().replace("-", "")
         );
 
