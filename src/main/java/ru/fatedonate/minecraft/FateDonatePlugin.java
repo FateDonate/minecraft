@@ -14,6 +14,12 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -46,6 +52,8 @@ import ru.fatedonate.minecraft.util.Pagination;
 
 public final class FateDonatePlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
     private static final DecimalFormat AMOUNT_FORMAT = new DecimalFormat("0.##");
+    private static final LegacyComponentSerializer LEGACY_SERIALIZER =
+            LegacyComponentSerializer.legacyAmpersand();
     private static final String PERMISSION_USE = "fatedonate.use";
     private static final String PERMISSION_ADMIN = "fatedonate.admin";
 
@@ -592,11 +600,7 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
             runSync(() -> {
                 final Player online = Bukkit.getPlayer(identity.uuid());
                 if (online != null) {
-                    reply(online, renderTemplate(message("topup-link-template"), Map.of(
-                            "{amount}", formatAmount(amount),
-                            "{currency}", appConfig.settings().currency(),
-                            "{checkout_url}", apiResult.data().checkoutUrl()
-                    )));
+                    sendTopupLinkMessage(online, amount, apiResult.data().checkoutUrl());
                 }
                 reopenMainMenuIfNeeded(identity.uuid());
             });
@@ -951,6 +955,42 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
     private void reply(CommandSender sender, String text) {
         final String prefix = appConfig != null ? message("prefix") : "&6[FateDonate]&r";
         sender.sendMessage(colorize(prefix + " " + text));
+    }
+
+    private void sendTopupLinkMessage(Player player, BigDecimal amount, String checkoutUrl) {
+        final String topupTemplate = renderTemplate(message("topup-link-template"), Map.of(
+                "{amount}", formatAmount(amount),
+                "{currency}", appConfig.settings().currency(),
+                "{checkout_url}", "{checkout_url}"
+        ));
+        final String fullTemplate = message("prefix") + " " + topupTemplate;
+        final int placeholderIndex = fullTemplate.indexOf("{checkout_url}");
+
+        if (placeholderIndex < 0) {
+            reply(player, renderTemplate(message("topup-link-template"), Map.of(
+                    "{amount}", formatAmount(amount),
+                    "{currency}", appConfig.settings().currency(),
+                    "{checkout_url}", checkoutUrl
+            )));
+            player.sendMessage(
+                    Component.text(checkoutUrl, NamedTextColor.AQUA, TextDecoration.UNDERLINED)
+                            .clickEvent(ClickEvent.openUrl(checkoutUrl))
+                            .hoverEvent(HoverEvent.showText(Component.text("Нажмите, чтобы открыть ссылку")))
+            );
+            return;
+        }
+
+        final String before = fullTemplate.substring(0, placeholderIndex);
+        final String after = fullTemplate.substring(placeholderIndex + "{checkout_url}".length());
+        final Component clickableUrl = Component.text(checkoutUrl, NamedTextColor.AQUA, TextDecoration.UNDERLINED)
+                .clickEvent(ClickEvent.openUrl(checkoutUrl))
+                .hoverEvent(HoverEvent.showText(Component.text("Нажмите, чтобы открыть ссылку")));
+
+        player.sendMessage(
+                LEGACY_SERIALIZER.deserialize(before)
+                        .append(clickableUrl)
+                        .append(LEGACY_SERIALIZER.deserialize(after))
+        );
     }
 
     private String message(String key) {
