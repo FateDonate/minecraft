@@ -105,9 +105,7 @@ public final class AppConfig {
             String purchaseAnnouncementTemplate,
             boolean topupWatchEnabled,
             int topupStatusPollIntervalSeconds,
-            int topupWatchTimeoutSeconds,
-            int pendingGrantRetryIntervalSeconds,
-            int pendingGrantMaxAttempts
+            int topupWatchTimeoutSeconds
     ) {
         public Settings {
             topupQuickAmounts = List.copyOf(topupQuickAmounts);

@@ -12,9 +12,7 @@ settings:
   purchase-announcement-template: "&6Игрок &f{player_name}&6 купил &f{item_name}&6 за &f{price} {currency}"
   topup-watch-enabled: true
   topup-status-poll-interval-seconds: 5
-  topup-watch-timeout-seconds: 600
-  pending-grant-retry-interval-seconds: 30
-  pending-grant-max-attempts: 8
+  topup-watch-timeout-seconds: 180
 
 messages:
   prefix: "&6[FateDonate]&r"
@@ -80,11 +78,7 @@ messages:
   status-api-template: "&7API URL: &f{api_base_url}"
   status-server-id-template: "&7Server ID: &f{server_id}"
   status-active-operations-template: "&7Активные операции: &f{count}"
-  status-pending-grants-template: "&7Очередь выдачи: &f{count}"
   status-topup-watches-template: "&7Ожидание пополнений: &f{count}"
-  purchase-queued-template: "&eВыдача товара временно недоступна. Покупка поставлена в очередь (#{queue_size})."
-  purchase-completed-delayed-template: "&aОтложенная выдача товара \"{item_title}\" завершена. Баланс: &f{balance} {currency}"
-  purchase-refunded-template: "&cПокупка \"{item_title}\" отменена после нескольких неудачных попыток. Средства возвращены."
   topup-completed-template: "&aПополнение подтверждено: +{amount} {currency}. Текущий баланс: &f{balance} {currency}"
   topup-watch-expired-template: "&eНе удалось дождаться подтверждения оплаты по сессии {session_id}. Проверьте баланс позже."
   topup-watch-failed-template: "&cОшибка проверки статуса пополнения (сессия {session_id})."

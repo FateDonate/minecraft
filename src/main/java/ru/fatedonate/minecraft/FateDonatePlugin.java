@@ -1,10 +1,8 @@
 package ru.fatedonate.minecraft;
 
-import java.io.File;
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -41,11 +39,9 @@ import ru.fatedonate.minecraft.config.AppConfig;
 import ru.fatedonate.minecraft.config.ConfigLoader;
 import ru.fatedonate.minecraft.model.BalanceCacheEntry;
 import ru.fatedonate.minecraft.model.OpenMenuContext;
-import ru.fatedonate.minecraft.model.PendingGrantTask;
 import ru.fatedonate.minecraft.model.PlayerIdentity;
 import ru.fatedonate.minecraft.model.TopupWatchSession;
 import ru.fatedonate.minecraft.service.ApiErrorResolver;
-import ru.fatedonate.minecraft.service.PendingGrantRepository;
 import ru.fatedonate.minecraft.util.Pagination;
 
 public final class FateDonatePlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
@@ -69,11 +65,7 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
             Map.entry("status-api-template", "&7API URL: &f{api_base_url}"),
             Map.entry("status-server-id-template", "&7Server ID: &f{server_id}"),
             Map.entry("status-active-operations-template", "&7Активные операции: &f{count}"),
-            Map.entry("status-pending-grants-template", "&7Очередь выдачи: &f{count}"),
             Map.entry("status-topup-watches-template", "&7Ожидание пополнений: &f{count}"),
-            Map.entry("purchase-queued-template", "&eВыдача товара временно недоступна. Покупка поставлена в очередь (#{queue_size})."),
-            Map.entry("purchase-completed-delayed-template", "&aОтложенная выдача товара \"{item_title}\" завершена. Баланс: &f{balance} {currency}"),
-            Map.entry("purchase-refunded-template", "&cПокупка \"{item_title}\" отменена после нескольких неудачных попыток. Средства возвращены."),
             Map.entry("topup-completed-template", "&aПополнение подтверждено: +{amount} {currency}. Текущий баланс: &f{balance} {currency}"),
             Map.entry("topup-watch-expired-template", "&eНе удалось дождаться подтверждения оплаты по сессии {session_id}. Проверьте баланс позже."),
             Map.entry("topup-watch-failed-template", "&cОшибка проверки статуса пополнения (сессия {session_id})."),
@@ -86,21 +78,13 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
     private final Map<UUID, OpenMenuContext> openMenus = new ConcurrentHashMap<>();
     private final Map<String, TopupWatchSession> topupWatchSessions = new ConcurrentHashMap<>();
 
-    private PendingGrantRepository pendingGrantRepository;
     private AppConfig appConfig;
     private GameApiClient apiClient;
-    private BukkitTask pendingGrantTask;
     private BukkitTask topupWatchTask;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
-
-        pendingGrantRepository = new PendingGrantRepository(
-                new File(getDataFolder(), "pending-grants.json"),
-                getLogger()
-        );
-        pendingGrantRepository.load();
 
         if (!loadRuntimeConfig(true)) {
             Bukkit.getPluginManager().disablePlugin(this);
@@ -119,15 +103,12 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         Bukkit.getPluginManager().registerEvents(this, this);
 
         restartBackgroundTasks();
-        getLogger().info("FateDonate loaded. Pending grants: " + pendingGrantRepository.size());
+        getLogger().info("FateDonate loaded.");
     }
 
     @Override
     public void onDisable() {
         stopBackgroundTasks();
-        if (pendingGrantRepository != null) {
-            pendingGrantRepository.save();
-        }
 
         activeOperations.clear();
         balanceCache.clear();
@@ -338,7 +319,6 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         reply(sender, renderTemplate(message("status-api-template"), Map.of("{api_base_url}", appConfig == null ? "-" : appConfig.settings().apiBaseUrl())));
         reply(sender, renderTemplate(message("status-server-id-template"), Map.of("{server_id}", appConfig == null ? "-" : appConfig.settings().serverId())));
         reply(sender, renderTemplate(message("status-active-operations-template"), Map.of("{count}", Integer.toString(activeOperations.size()))));
-        reply(sender, renderTemplate(message("status-pending-grants-template"), Map.of("{count}", Integer.toString(pendingGrantRepository == null ? 0 : pendingGrantRepository.size()))));
         reply(sender, renderTemplate(message("status-topup-watches-template"), Map.of("{count}", Integer.toString(topupWatchSessions.size()))));
     }
 
@@ -352,7 +332,6 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         balanceLore.add(cached == null
                 ? "&7Нажмите, чтобы обновить баланс."
                 : "&7Кэш: &f" + formatAmount(cached) + " " + appConfig.settings().currency());
-        balanceLore.add("&7Очередь выдачи: &f" + pendingGrantRepository.size());
 
         setButton(inventory, 13, Material.SUNFLOWER, message("menu-my-balance"), balanceLore, actions, target -> {
             target.closeInventory();
@@ -362,8 +341,7 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         setButton(inventory, 23, Material.CHEST, message("menu-shop"), List.of("&7Категории и товары."), actions, target -> openCategoriesMenu(target, 0));
         setButton(inventory, 31, Material.CLOCK, "&bСервис", List.of(
                 "&7Активные операции: &f" + activeOperations.size(),
-                "&7Ожидание пополнений: &f" + topupWatchSessions.size(),
-                "&7Очередь выдачи: &f" + pendingGrantRepository.size()
+                "&7Ожидание пополнений: &f" + topupWatchSessions.size()
         ), actions, target -> {
             if (target.hasPermission(PERMISSION_ADMIN)) {
                 target.closeInventory();
@@ -657,7 +635,6 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
                 final Player online = Bukkit.getPlayer(identity.uuid());
 
                 if (grantSuccess) {
-                    completePurchaseAsync(purchaseResult.data().purchaseId());
                     if (online != null) {
                         reply(online, renderTemplate(message("purchase-success-template"), Map.of(
                                 "{item_title}", plain(item.title()),
@@ -670,68 +647,12 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
                     return;
                 }
 
-                final PendingGrantTask task = PendingGrantTask.from(
-                        purchaseResult.data().purchaseId(),
-                        identity,
-                        item,
-                        balanceAfter,
-                        appConfig.settings().currency(),
-                        commands,
-                        System.currentTimeMillis() + appConfig.settings().pendingGrantRetryIntervalSeconds() * 1000L
-                );
-                final int queueSize = pendingGrantRepository.enqueue(task);
                 if (online != null) {
-                    reply(online, renderTemplate(message("purchase-queued-template"), Map.of("{queue_size}", Integer.toString(queueSize))));
+                    reply(online, message("purchase-grant-failed"));
                 }
                 reopenMainMenuIfNeeded(identity.uuid());
             });
         });
-    }
-
-    private void processPendingGrants() {
-        if (!isReady() || pendingGrantRepository.size() == 0) {
-            return;
-        }
-
-        final long now = System.currentTimeMillis();
-        final int maxAttempts = appConfig.settings().pendingGrantMaxAttempts();
-        final List<PendingGrantTask> due = pendingGrantRepository.values().stream()
-                .filter(task -> task.nextAttemptAtMillis <= now)
-                .sorted(Comparator.comparingLong(task -> task.createdAtMillis))
-                .limit(16)
-                .toList();
-
-        if (due.isEmpty()) {
-            return;
-        }
-
-        for (var task : due) {
-            final boolean success = executeRenderedCommands(task.commands, task.itemId);
-            if (success) {
-                pendingGrantRepository.remove(task.id);
-                completePurchaseAsync(task.purchaseId);
-                final Player player = Bukkit.getPlayer(task.playerUuid());
-                if (player != null) {
-                    reply(player, renderTemplate(message("purchase-completed-delayed-template"), Map.of(
-                            "{item_title}", task.itemTitle,
-                            "{balance}", formatAmount(task.balanceAfter),
-                            "{currency}", task.currency
-                    )));
-                }
-                continue;
-            }
-
-            task.attempts += 1;
-            if (task.attempts >= maxAttempts) {
-                pendingGrantRepository.remove(task.id);
-                refundPurchaseAsync(task);
-                continue;
-            }
-
-            final int multiplier = Math.min(1 + task.attempts, 6);
-            task.nextAttemptAtMillis = now + appConfig.settings().pendingGrantRetryIntervalSeconds() * 1000L * multiplier;
-            pendingGrantRepository.update();
-        }
     }
 
     private void pollTopupSessions() {
@@ -743,21 +664,27 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
         final List<TopupWatchSession> sessions = new ArrayList<>(topupWatchSessions.values());
 
         for (var watch : sessions) {
-            if (watch.expiresAtMillis() <= now) {
-                topupWatchSessions.remove(watch.sessionId());
-                runSync(() -> {
-                    final Player player = Bukkit.getPlayer(watch.playerUuid());
-                    if (player != null) {
-                        reply(player, renderTemplate(message("topup-watch-expired-template"), Map.of("{session_id}", watch.sessionId())));
-                    }
-                });
-                continue;
-            }
-
+            final boolean isExpiredByTimeout = watch.expiresAtMillis() <= now;
             final ApiResult<GameApiClient.TopupSessionResponse> statusResult = apiClient.getTopupSession(watch.sessionId());
             if (!statusResult.isSuccess() || statusResult.data() == null) {
                 if (statusResult.statusCode() == 404) {
                     topupWatchSessions.remove(watch.sessionId());
+                    if (isExpiredByTimeout) {
+                        runSync(() -> {
+                            final Player player = Bukkit.getPlayer(watch.playerUuid());
+                            if (player != null) {
+                                reply(player, renderTemplate(message("topup-watch-expired-template"), Map.of("{session_id}", watch.sessionId())));
+                            }
+                        });
+                    }
+                } else if (isExpiredByTimeout) {
+                    topupWatchSessions.remove(watch.sessionId());
+                    runSync(() -> {
+                        final Player player = Bukkit.getPlayer(watch.playerUuid());
+                        if (player != null) {
+                            reply(player, renderTemplate(message("topup-watch-expired-template"), Map.of("{session_id}", watch.sessionId())));
+                        }
+                    });
                 }
                 continue;
             }
@@ -785,6 +712,17 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
                 continue;
             }
 
+            if (isExpiredByTimeout && "PENDING".equals(status)) {
+                topupWatchSessions.remove(watch.sessionId());
+                runSync(() -> {
+                    final Player player = Bukkit.getPlayer(watch.playerUuid());
+                    if (player != null) {
+                        reply(player, renderTemplate(message("topup-watch-expired-template"), Map.of("{session_id}", watch.sessionId())));
+                    }
+                });
+                continue;
+            }
+
             if ("FAILED".equals(status)) {
                 topupWatchSessions.remove(watch.sessionId());
                 runSync(() -> {
@@ -795,49 +733,6 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
                 });
             }
         }
-    }
-
-    private void completePurchaseAsync(String purchaseId) {
-        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
-            if (!isReady()) {
-                return;
-            }
-            final ApiResult<GameApiClient.PurchaseStateResponse> result = apiClient.completePurchase(purchaseId);
-            if (!result.isSuccess()) {
-                getLogger().warning("Failed to complete purchase " + purchaseId + ": " + ApiErrorResolver.resolve(result, "purchase completion failed"));
-            }
-        });
-    }
-
-    private void refundPurchaseAsync(PendingGrantTask task) {
-        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
-            if (!isReady()) {
-                return;
-            }
-            final ApiResult<GameApiClient.PurchaseStateResponse> result = apiClient.refundPurchase(
-                    task.purchaseId,
-                    "Авто-возврат после ошибок выдачи товара"
-            );
-            if (!result.isSuccess()) {
-                getLogger().warning("Failed to refund purchase " + task.purchaseId + ": " + ApiErrorResolver.resolve(result, "purchase refund failed"));
-                return;
-            }
-
-            if (result.data() != null && result.data().balance() != null) {
-                updateBalanceCache(task.playerId, result.data().balance());
-            }
-
-            runSync(() -> {
-                final Player player = Bukkit.getPlayer(task.playerUuid());
-                if (player != null) {
-                    reply(player, renderTemplate(message("purchase-refunded-template"), Map.of(
-                            "{item_title}", task.itemTitle,
-                            "{balance}", formatAmount(task.balanceAfter),
-                            "{currency}", task.currency
-                    )));
-                }
-            });
-        });
     }
 
     private void registerTopupWatch(PlayerIdentity identity, String sessionId) {
@@ -861,13 +756,6 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
             return;
         }
 
-        pendingGrantTask = Bukkit.getScheduler().runTaskTimer(
-                this,
-                this::processPendingGrants,
-                60L,
-                Math.max(20L, appConfig.settings().pendingGrantRetryIntervalSeconds() * 20L)
-        );
-
         if (appConfig.settings().topupWatchEnabled()) {
             topupWatchTask = Bukkit.getScheduler().runTaskTimerAsynchronously(
                     this,
@@ -881,10 +769,6 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
     }
 
     private void stopBackgroundTasks() {
-        if (pendingGrantTask != null) {
-            pendingGrantTask.cancel();
-            pendingGrantTask = null;
-        }
         if (topupWatchTask != null) {
             topupWatchTask.cancel();
             topupWatchTask = null;
@@ -1178,7 +1062,7 @@ public final class FateDonatePlugin extends JavaPlugin implements Listener, Comm
     }
 
     private boolean isReady() {
-        return appConfig != null && apiClient != null && pendingGrantRepository != null;
+        return appConfig != null && apiClient != null;
     }
 
     private void runSync(Runnable runnable) {

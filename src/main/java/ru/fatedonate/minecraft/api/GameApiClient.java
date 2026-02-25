@@ -107,10 +107,9 @@ public final class GameApiClient {
         }
 
         final var json = response.data();
-        final String purchaseId = readString(json, "purchaseId");
         final BigDecimal balance = readBigDecimal(json, "balance");
 
-        if (purchaseId == null || purchaseId.isBlank() || balance == null) {
+        if (balance == null) {
             return ApiResult.fail(
                     response.statusCode(),
                     "Не удалось разобрать ответ API покупки.",
@@ -120,69 +119,7 @@ public final class GameApiClient {
 
         return ApiResult.success(
                 response.statusCode(),
-                new PurchaseResponse(purchaseId.trim(), balance)
-        );
-    }
-
-    public ApiResult<PurchaseStateResponse> completePurchase(String purchaseId) {
-        final var request = privateRequest(buildUrl("purchase/" + purchaseId + "/complete"))
-                .POST(HttpRequest.BodyPublishers.ofString("{}", StandardCharsets.UTF_8))
-                .build();
-
-        final var response = send(request);
-        if (!response.isSuccess() || response.data() == null) {
-            return ApiResult.fail(response.statusCode(), response.error(), response.retryAfterSeconds());
-        }
-
-        final var json = response.data();
-        final String responsePurchaseId = readString(json, "purchaseId");
-        final String status = readString(json, "status");
-        final boolean duplicate = readBoolean(json, "duplicate", false);
-
-        if (responsePurchaseId == null || responsePurchaseId.isBlank() || status == null || status.isBlank()) {
-            return ApiResult.fail(
-                    response.statusCode(),
-                    "Не удалось разобрать ответ API завершения покупки.",
-                    response.retryAfterSeconds()
-            );
-        }
-
-        return ApiResult.success(
-                response.statusCode(),
-                new PurchaseStateResponse(responsePurchaseId, status, null, duplicate)
-        );
-    }
-
-    public ApiResult<PurchaseStateResponse> refundPurchase(String purchaseId, String reason) {
-        final var payload = new JsonObject();
-        payload.addProperty("reason", reason);
-
-        final var request = privateRequest(buildUrl("purchase/" + purchaseId + "/refund"))
-                .POST(HttpRequest.BodyPublishers.ofString(payload.toString(), StandardCharsets.UTF_8))
-                .build();
-
-        final var response = send(request);
-        if (!response.isSuccess() || response.data() == null) {
-            return ApiResult.fail(response.statusCode(), response.error(), response.retryAfterSeconds());
-        }
-
-        final var json = response.data();
-        final String responsePurchaseId = readString(json, "purchaseId");
-        final String status = readString(json, "status");
-        final BigDecimal balance = readBigDecimal(json, "balance");
-        final boolean duplicate = readBoolean(json, "duplicate", false);
-
-        if (responsePurchaseId == null || responsePurchaseId.isBlank() || status == null || status.isBlank()) {
-            return ApiResult.fail(
-                    response.statusCode(),
-                    "Не удалось разобрать ответ API возврата покупки.",
-                    response.retryAfterSeconds()
-            );
-        }
-
-        return ApiResult.success(
-                response.statusCode(),
-                new PurchaseStateResponse(responsePurchaseId, status, balance, duplicate)
+                new PurchaseResponse(balance)
         );
     }
 
@@ -348,23 +285,6 @@ public final class GameApiClient {
         }
     }
 
-    private static boolean readBoolean(JsonObject json, String key, boolean fallback) {
-        if (json == null || !json.has(key)) {
-            return fallback;
-        }
-
-        final JsonElement value = json.get(key);
-        if (!value.isJsonPrimitive()) {
-            return fallback;
-        }
-
-        try {
-            return value.getAsBoolean();
-        } catch (Exception exception) {
-            return fallback;
-        }
-    }
-
     private String buildUrl(String path) {
         final String base = settings.apiBaseUrl().trim().replaceAll("/+$", "");
         final String normalizedPath = path.startsWith("/") ? path.substring(1) : path;
@@ -377,10 +297,7 @@ public final class GameApiClient {
     public record TopupLinkResponse(String sessionId, String checkoutUrl) {
     }
 
-    public record PurchaseResponse(String purchaseId, BigDecimal balance) {
-    }
-
-    public record PurchaseStateResponse(String purchaseId, String status, BigDecimal balance, boolean duplicate) {
+    public record PurchaseResponse(BigDecimal balance) {
     }
 
     public record TopupSessionResponse(String sessionId, String status, String playerId, BigDecimal amount, String currency) {

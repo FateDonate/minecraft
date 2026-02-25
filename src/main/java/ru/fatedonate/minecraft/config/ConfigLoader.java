@@ -140,19 +140,9 @@ public final class ConfigLoader {
                 60
         );
         final int topupWatchTimeoutSeconds = clampInt(
-                configuration.getInt("settings.topup-watch-timeout-seconds", 600),
+                configuration.getInt("settings.topup-watch-timeout-seconds", 180),
                 30,
                 3600
-        );
-        final int pendingGrantRetryIntervalSeconds = clampInt(
-                configuration.getInt("settings.pending-grant-retry-interval-seconds", 30),
-                5,
-                600
-        );
-        final int pendingGrantMaxAttempts = clampInt(
-                configuration.getInt("settings.pending-grant-max-attempts", 8),
-                1,
-                100
         );
 
         return new AppConfig.Settings(
@@ -169,9 +159,7 @@ public final class ConfigLoader {
                 purchaseAnnouncementTemplate,
                 topupWatchEnabled,
                 topupStatusPollIntervalSeconds,
-                topupWatchTimeoutSeconds,
-                pendingGrantRetryIntervalSeconds,
-                pendingGrantMaxAttempts
+                topupWatchTimeoutSeconds
         );
     }
 
