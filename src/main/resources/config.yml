@@ -68,9 +68,9 @@ messages:
 
 categories:
   vip:
-    title: "&6VIP и ранги"
+    title: "&6Привилегии"
     description:
-      - "&7Привилегии и статусы."
+      - "&7Особые роли и статусы."
     material: "DIAMOND"
     slot: 10
   kits:
