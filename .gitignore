@@ -1,5 +1,7 @@
 .idea
 .vscode
 
+*.iml
+
 target/
-.mvn/wrapper/maven-wrapper.jar
+.maven_cache/
